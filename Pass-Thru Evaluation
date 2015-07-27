@@ -1,0 +1,117 @@
+rm(list=ls())  
+
+###################################################################################
+
+s1 <- read.table("scenario1.txt", header=T)
+s2 <- read.table("scenario2.txt", header=T)
+
+###################################################################################
+#Calculating future LIBOR rates, daily LIBOR bp differences, & cumulative margins
+###################################################################################
+
+N <- 1000000*100
+f1 <- (100-s1[,2])/100
+f2 <- (100-s2[,2])/100
+bp1 <- diff(f1)
+bp2 <- diff(f2)
+p1 <- N*0.25*-bp1
+p2 <- N*0.25*-bp2
+
+nov1 <- sum(p1[1:12])
+nov2 <- sum(p2[1:12])
+dec1 <- sum(p1[1:33])
+dec2 <- sum(p2[1:33])
+jan1 <- sum(p1[1:52])
+jan2 <- sum(p2[1:52])
+feb1 <- sum(p1[1:73])
+feb2 <- sum(p2[1:73])
+mar1 <- sum(p1[1:93])
+mar2 <- sum(p2[1:93])
+apr1 <- sum(p1)
+apr2 <- sum(p2)
+
+(P1 <- c(nov1,dec1,jan1,feb1,mar1,apr1))
+(P2 <- c(nov2,dec2,jan2,feb2,mar2,apr2))
+
+
+###################################################################################
+# Marking-to-market with profit/(loss) investment 
+###################################################################################
+
+df <- s1[,3][-1]
+(P1i <- sum(p1/df))
+(P2i <- sum(p2/df))
+
+###################################################################################
+# Pass-through security estimation
+###################################################################################
+
+WAC <- 0.10
+WAM <- 352
+s <- 0.005
+m <- 12
+PSA <- 200
+
+P <- rep(0,WAM+1)
+P[1] <- 400000000
+A <- rep(0,WAM)
+I <- rep(0,WAM)
+IP <- rep(0,WAM)
+SP <- rep(0,WAM)
+PP <- rep(0,WAM)
+CPR <- rep(0,WAM+(360-WAM))
+
+# CPR & SMM rates
+for(i in 1:length(CPR)) {
+  if(i <= 30) {
+    CPR[i] <- 0.002*i
+    } else CPR[i] <- 0.06
+}
+CPR <- CPR*PSA/100
+SMM <- 1-(1-CPR)^(1/m)
+
+# Estimating cash flows
+for(i in 1:WAM) {
+  A[i] <- (WAC/m*P[i]/(1-(1+WAC/m)^(-WAM+(i-1))))
+  I[i] <- WAC/m*P[i]
+  IP[i] <- (WAC-s)/m*P[i]
+  SP[i] <- P[i]*WAC/m/((1+WAC/m)^(WAM-(i-1))-1)
+  PP[i] <- SMM[i+(360-WAM)]*(P[i]-SP[i])
+  P[i+1] <- P[i]-SP[i]-PP[i]
+}
+
+###################################################################################
+# Pass-through security plots
+###################################################################################
+
+plot(P, type="l",main="Mortgage pass-through, 200 PSA",xlab="Month",ylab="Remaining Principal Balance ($)")
+matplot(cbind(IP,SP,PP),main="Mortgage pass-through, 200 PSA",xlab="Month",ylab="($)",col=2:4,type="l",lty=1)
+legend("top",legend=c("Interest (pass-through)","Scheduled Principal","Principal Prepayment"),lty=1,col=2:4,bty="n")
+
+###################################################################################
+# Weighted average life (WAL)
+###################################################################################
+
+x <- seq(1,352)
+a <- t(x)%*%(SP+PP)
+b <- 1/P[1]
+(WAL <- a*b)
+
+###################################################################################
+# Annual Y-T-M
+###################################################################################
+
+# NPV valuation function
+P.morg <- function(y,c,m,p) {
+  a=0
+  for(i in 1:length(c)) {
+    a <- a+(c[i]/(1+y/m)^i)
+  }
+  -p+a  
+}
+
+# Yield optimization
+CF <- IP+SP+PP
+yield <- uniroot(function(y) P.morg(y,CF,12,4e+08),c(0,1),tol=1e-7)
+yield$root
+(P.morg(.095,CF,12,4e+08))
