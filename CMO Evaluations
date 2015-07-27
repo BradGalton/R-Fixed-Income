@@ -1,0 +1,230 @@
+rm(list=ls())  
+
+###################################################################################
+###################################################################################
+# Prices for Pass-through, PO, and IO 
+###################################################################################
+
+#Prepayment rate function
+CPR <- function(WAM,PSA,m) {
+  CPR <- rep(0,WAM+(360-WAM))
+  for(i in 1:length(CPR)) {
+    if(i <= 30) {
+      CPR[i] <- 0.002*i
+      } else CPR[i] <- 0.06
+  }
+  CPR <- CPR*PSA/100
+  SMM <- 1-(1-CPR)^(1/m)
+  f <- SMM
+}
+
+#CMO cash flow estimation function 
+CMO <- function(WAM,WAC,s,m,SMM,N) {
+  P <- rep(0,WAM+1)
+  P[1] <- N
+  A <- rep(0,WAM)
+  I <- rep(0,WAM)
+  IP <- rep(0,WAM)
+  SP <- rep(0,WAM)
+  PP <- rep(0,WAM)
+  for(i in 1:WAM) {
+    A[i] <- (WAC/m*P[i]/(1-(1+WAC/m)^(-WAM+(i-1))))
+    I[i] <- WAC/m*P[i]
+    IP[i] <- (WAC-s)/m*P[i]
+    SP[i] <- P[i]*WAC/m/((1+WAC/m)^(WAM-(i-1))-1)
+    PP[i] <- SMM[i+(360-WAM)]*(P[i]-SP[i])
+    P[i+1] <- P[i]-SP[i]-PP[i]
+  }
+  f <- list("A"=A,"I"=I,"IP"=IP,"SP"=SP,"PP"=PP,"P"=P)
+}
+
+# CMO valuation function, continuous compounding
+P.cmo <- function(r,c,m,k) {
+  a=0
+  for(i in 1:length(c)) {
+    a <- a+(c[i]*exp(-r*k[i]*(1/m)))
+  }
+  a  
+}
+
+WAC <- 0.08
+WAM <- 360
+s <- 0.005
+m <- 12
+PSA <- 200
+N <- 600000000
+k <- seq(1,360)
+r <- 0.06
+SMM <- CPR(WAM,PSA,m)
+CF <- CMO(WAM,WAC,s,m,SMM,N)
+
+(P.cmo(r,(CF$IP+CF$SP+CF$PP),m,k))
+(P.cmo(r,CF$IP,m,k))
+(P.cmo(r,(CF$SP+CF$PP),m,k))
+
+###################################################################################
+# Effective duration and convexity for Pass-through, PO, and IO 
+# PSA variations with level of risk-free rate
+###################################################################################
+
+# 5.5% risk-free rate
+r <- 0.055
+PSA <- 250
+SMM <- CPR(WAM,PSA,m)
+CF <- CMO(WAM,WAC,s,m,SMM,N)
+
+(P.cmo(r,(CF$IP+CF$SP+CF$PP),m,k))
+(P.cmo(r,CF$IP,m,k))
+(P.cmo(r,(CF$SP+CF$PP),m,k))
+
+# 6.5% risk-free rate
+r <- 0.065
+PSA <- 150
+SMM <- CPR(WAM,PSA,m)
+CF <- CMO(WAM,WAC,s,m,SMM,N)
+
+(P.cmo(r,(CF$IP+CF$SP+CF$PP),m,k))
+(P.cmo(r,CF$IP,m,k))
+(P.cmo(r,(CF$SP+CF$PP),m,k))
+
+###################################################################################
+# Plots for sequential-pay CMO structure
+###################################################################################
+
+# Sequential CMO cash flow estimation
+SeqCMO <- function(WAM,WAC,ss,m,CF,All) {
+  PA <- rep(0,WAM+1)
+  PB <- rep(0,WAM+1)
+  PC <- rep(0,WAM+1)
+  PD <- rep(0,WAM+1)
+  PA[1] <- CF$P[1]*All[1]
+  PB[1] <- CF$P[1]*All[2]
+  PC[1] <- CF$P[1]*All[3]
+  PD[1] <- CF$P[1]*All[4]
+  for(i in 1:WAM) {
+    PA[i+1] <- PA[i]-min(PA[i],CF$SP[i]+CF$PP[i])
+    PB[i+1] <- PB[i]-min(PB[i],CF$SP[i]+CF$PP[i]-min(PA[i],CF$SP[i]+CF$PP[i]))
+    PC[i+1] <- PC[i]-min(PC[i],CF$SP[i]+CF$PP[i]-sum(min(PA[i],CF$SP[i]+CF$PP[i]),min(PB[i],CF$SP[i]+CF$PP[i]-min(PA[i],CF$SP[i]+CF$PP[i]))))
+    PD[i+1] <- PD[i]-min(PD[i],CF$SP[i]+CF$PP[i]-sum(min(PA[i],CF$SP[i]+CF$PP[i]),min(PB[i],CF$SP[i]+CF$PP[i]-min(PA[i],CF$SP[i]+CF$PP[i])),min(PC[i],CF$SP[i]+CF$PP[i]-sum(min(PA[i],CF$SP[i]+CF$PP[i]),min(PB[i],CF$SP[i]+CF$PP[i]-min(PA[i],CF$SP[i]+CF$PP[i]))))))
+  }
+  dPA <- -diff(PA)
+  dPB <- -diff(PB)
+  dPC <- -diff(PC)
+  dPD <- -diff(PD)
+  IPA <- (WAC-ss[1])/m*PA[-length(PA)]
+  IPB <- (WAC-ss[2])/m*PB[-length(PB)]
+  IPC <- (WAC-ss[3])/m*PC[-length(PC)]
+  IPD <- (WAC-ss[4])/m*PD[-length(PD)]
+  f <- list("PA"=PA,"dPA"=dPA,"IPA"=IPA,"PB"=PB,"dPB"=dPB,"IPB"=IPB,"PC"=PC,"dPC"=dPC,"IPC"=IPC,"PD"=PD,"dPD"=dPD,"IPD"=IPD)
+}
+
+r <- 0.06
+PSA <- 200
+All <- c(0.5,0.25,0.15,0.10)
+ss <- rep(0.005,4)
+SMM <- CPR(WAM,PSA,m)
+CF <- CMO(WAM,WAC,s,m,SMM,N)
+SeqCF <- SeqCMO(WAM,WAC,ss,m,CF,All)
+
+# Plot 1
+matplot(cbind(CF$P,SeqCF$PA,SeqCF$PB,SeqCF$PC,SeqCF$PD),main="Sequential CMO principal amortization, 200 PSA",xlab="Month",ylab="($)",col=2:6,type="l",lty=1)
+legend("topright",legend=c("Pass-through","Tranche A","Tranche B","Tranche C", "Tranche D"),lty=1,col=2:6,bty="n")
+
+# Plot 2
+matplot(cbind((CF$SP+CF$PP),SeqCF$dPA,SeqCF$dPB,SeqCF$dPC,SeqCF$dPD),main="Sequential CMO principal payments, 200 PSA",xlab="Month",ylab="($)",col=2:6,type="l",lty=1)
+legend("topright",legend=c("Pass-through","Tranche A","Tranche B","Tranche C", "Tranche D"),lty=1,col=2:6,bty="n")
+
+# Plot 3
+matplot(cbind(CF$IP,SeqCF$IPA,SeqCF$IPB,SeqCF$IPC,SeqCF$IPD),main="Sequential CMO interest payments, 200 PSA",xlab="Month",ylab="($)",col=2:6,type="l",lty=1)
+legend("topright",legend=c("Pass-through","Tranche A","Tranche B","Tranche C", "Tranche D"),lty=1,col=2:6,bty="n")
+
+
+###################################################################################
+# Prices for sequential-pay CMO structure
+###################################################################################
+
+CFA <- SeqCF$dPA+SeqCF$IPA
+CFB <- SeqCF$dPB+SeqCF$IPB
+CFC <- SeqCF$dPC+SeqCF$IPC
+CFD <- SeqCF$dPD+SeqCF$IPD
+(P.cmo(r,(CF$IP+CF$SP+CF$PP),m,k))
+(P.cmo(r,CFA,m,k))
+(P.cmo(r,CFB,m,k))
+(P.cmo(r,CFC,m,k))
+(P.cmo(r,CFD,m,k))
+
+###################################################################################
+# WALs for sequential-pay CMO structure
+###################################################################################
+
+# 200 PSA
+(WALp <- (t(k)%*%(CF$SP+CF$PP))/CF$P[1])
+(WALa <- (t(k)%*%(SeqCF$dPA))/SeqCF$PA[1])
+(WALb <- (t(k)%*%(SeqCF$dPB))/SeqCF$PB[1])
+(WALc <- (t(k)%*%(SeqCF$dPC))/SeqCF$PC[1])
+(WALd <- (t(k)%*%(SeqCF$dPD))/SeqCF$PD[1])
+
+# 20 PSA
+PSA <- 20 
+SMM <- CPR(WAM,PSA,m)
+CF <- CMO(WAM,WAC,s,m,SMM,N)
+SeqCF <- SeqCMO(WAM,WAC,ss,m,CF,All)
+(WALp <- (t(k)%*%(CF$SP+CF$PP))/CF$P[1])
+(WALa <- (t(k)%*%(SeqCF$dPA))/SeqCF$PA[1])
+(WALb <- (t(k)%*%(SeqCF$dPB))/SeqCF$PB[1])
+(WALc <- (t(k)%*%(SeqCF$dPC))/SeqCF$PC[1])
+(WALd <- (t(k)%*%(SeqCF$dPD))/SeqCF$PD[1])
+
+#500 PSA
+PSA <- 500
+SMM <- CPR(WAM,PSA,m)
+CF <- CMO(WAM,WAC,s,m,SMM,N)
+SeqCF <- SeqCMO(WAM,WAC,ss,m,CF,All)
+(WALp <- (t(k)%*%(CF$SP+CF$PP))/CF$P[1])
+(WALa <- (t(k)%*%(SeqCF$dPA))/SeqCF$PA[1])
+(WALb <- (t(k)%*%(SeqCF$dPB))/SeqCF$PB[1])
+(WALc <- (t(k)%*%(SeqCF$dPC))/SeqCF$PC[1])
+(WALd <- (t(k)%*%(SeqCF$dPD))/SeqCF$PD[1])
+
+###################################################################################
+# Sequential-pay CMO structure
+# Notional tranche principal
+###################################################################################
+
+c <- 0.075
+rA <- 0.062
+rB <- 0.065
+rC <- 0.07
+rD <- 0.072
+ss <- c(WAC-rA,WAC-rB,WAC-rC,WAC-rD)
+PSA <- 200
+SMM <- CPR(WAM,PSA,m)
+CF <- CMO(WAM,WAC,s,m,SMM,N)
+SeqCF <- SeqCMO(WAM,WAC,ss,m,CF,All)
+PIO <- rep(0,WAM+1)
+(PIO[1] <- sum((c-rA)/c*SeqCF$PA[1],(c-rB)/c*SeqCF$PB[1],(c-rC)/c*SeqCF$PC[1],(c-rD)/c*SeqCF$PD[1]))
+
+###################################################################################
+# WALs for sequential-pay CMO structure with notional IO tranche
+###################################################################################
+
+(WALa <- (t(k)%*%(SeqCF$dPA))/SeqCF$PA[1])
+(WALb <- (t(k)%*%(SeqCF$dPB))/SeqCF$PB[1])
+(WALc <- (t(k)%*%(SeqCF$dPC))/SeqCF$PC[1])
+(WALd <- (t(k)%*%(SeqCF$dPD))/SeqCF$PD[1])
+
+###################################################################################
+# Price of notional IO tranche
+###################################################################################
+
+dA <- diff(SeqCF$PA)*(ss[1]-s)/c
+dB <- diff(SeqCF$PB)*(ss[2]-s)/c
+dC <- diff(SeqCF$PC)*(ss[3]-s)/c
+dD <- diff(SeqCF$PD)*(ss[4]-s)/c
+
+for(i in 2:length(PIO)) {
+  PIO[i] <- PIO[i-1]+dA[i-1]+dB[i-1]+dC[i-1]+dD[i-1]
+}
+
+IPIO <- PIO*c/m
+(P.cmo(r,IPIO[-length(IPIO)],m,k))
