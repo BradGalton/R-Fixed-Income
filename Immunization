@@ -1,0 +1,172 @@
+rm(list=ls())
+
+#Price of annuity
+PAnnuity<-function(A,y,m,n){
+  f<-(A/(y/m))*(1-1/((1+y/m)^n))
+  f
+}
+
+#Periodic payment of an annuity given its price
+Aannuity<-function(P,y,m,n){
+  f<-P*(y/m)/(1-1/((1+y/m)^n))
+  f
+}
+
+#Price of a coupon bond
+PBond<-function(c,y,m,n){
+  B<-100
+  f<-PAnnuity((c/m)*B,y,m,n)+B/((1+y/m)^n)
+  f
+}
+
+#MaCaulay Duration of a coupon bond
+DMC<-function(y,c,m,n){
+  A<- (1+(y/m))/y
+  B<- 1+(y/m)+n*((c-y)/m)
+  D<- c*((1+(y/m))^n)-c+y
+  f<- A-(B/D)
+  f
+}
+
+#Modified Duration of an annuity
+DMODannuity<-function(y,m,n){
+  A<- 1/y
+  B<- n/m
+  C<- (1+(y/m))^(n+1)
+  D<- 1-1/((1+y/m)^n)
+  f<- A-(B/(C*D))
+  f
+}
+
+#Maximum yield curve shift
+inc=0.004
+#Number of hedging exercises simulated
+Nreps<-1000
+#Initialize simulation output
+Value<-matrix(rep(0,2),Nreps,2)
+#Final yield
+Yfinal<-rep(0,Nreps)
+
+#Simulation loop
+for (j in 1:Nreps){
+  m<-2
+  y<-0.04
+  TL<-5
+  nL<-m*TL
+  #Number of liability payments as nL will be decremented
+  N<-nL
+  A<-Aannuity(100000,y,m,nL)
+  PL<-PAnnuity(A,y,m,nL)
+  DL<-DMODannuity(y,m,nL)
+  
+  #Coupon rate, maturity, price and modified duration of Bond 1
+  c1<-0.04
+  T1<-0.5
+  P1<-100/(1+(y/m))
+  D1<-T1/(1+(y/m))
+  #n1<-m*T1
+  #P1<-PBond(c1,y,m,n1)
+  #D1<-DMC(y,c1,m,n1)/(1+y/m)
+  
+  #Coupon rate, maturity, price and modified duration of Bond 2
+  c2<-0.04
+  T2<-10
+  n2<-m*T2
+  P2<-PBond(c2,y,m,n2)
+  D2<-DMC(y,c2,m,n2)/(1+y/m)
+  
+  #Matrix for hedging portfolio value and duration
+  Amat<-rbind(c(P1,P2),c(P1*D1,P2*D2))
+  #Matrix for liability value and duration
+  b<-as.matrix(c(PL,DL*PL))
+  #Invert hedging portfolio matrix
+  Ainv<-solve(Amat)
+  #Composition of hedging portfolio
+  x<-Ainv%*%b
+  #Value and duration of hedging portfolio
+  Port<-t(Amat%*%x)
+  
+  #Arrays for each hedging output
+  xvec<-matrix(rep(0,2),nL+1,2)
+  Pvec<-matrix(rep(0,2),nL+1,2)
+  Dvec<-matrix(rep(0,3),nL+1,3)
+  yvec<-rep(0,nL+1)
+  DLvec<-matrix(rep(0,2),nL+1,2)
+  PLvec<-matrix(rep(0,3),nL+1,3)
+  
+  #Initial value of naive hedging strategy portfolio
+  Palt<-PL
+  
+  #Initial setup (same for each replication)
+  xvec[1,]<-c(x[1],x[2])          #number of bonds held
+  Pvec[1,]<-c(P1,P2)              #value of bond holdings
+  Dvec[1,]<-c(D1,D2,DL)           #duration of bond holdings and liability
+  yvec[1]<-y                      #yield
+  DLvec[1,]<-c(DL,Port[2]/PL)     #duration of liability and portfolio
+  PLvec[1,]<-c(Port[1],Palt,PL)   #value of liability, hedging portfolio, and naive portfolio
+  
+  
+  #Loop over hedging periods
+  for (i in 1:(nL-1)){
+    Palt<-Palt*(1+y/m)-A
+    Cash_In<-100*(x[1]+x[2]*(c2/m))
+    n2<-n2-1
+    nL<-nL-1
+    #Simulate new yield from uniform distribution center old yield
+    y<-max(0,runif(1, min=y-inc, max=y+inc))
+    P1<-100/(1+y/m)
+    D1<-T1/(1+y/m)
+    P2<-PBond(c2,y,m,n2)
+    D2<-DMC(y,c2,m,n2)/(1+y/m)
+    PL<-PAnnuity(A,y,m,nL)
+    DL<-DMODannuity(y,m,nL)
+    
+    Portfolio<-x[2]*P2+Cash_In-A
+    
+    #New hedging portfolio composition
+    Amat<-rbind(c(P1,P2),c(P1*D1,P2*D2))
+    b<-as.matrix(c(Portfolio,DL*PL))
+    Ainv<-solve(Amat)
+    x<-Ainv%*%b
+    Port<-t(Amat%*%x)
+    #Output
+    xvec[i+1,]<-t(x)
+    Pvec[i+1,]<-c(P1,P2)
+    Dvec[i+1,]<-c(D1,D2,DL)
+    yvec[i+1]<-y
+    DLvec[i+1,]<-c(PL*DL,Port[2])
+    PLvec[i+1,]<-c(Port[1],Palt,PL)  
+  }
+  
+  #Naive strategy at final payment (=0)
+  Palt<-Palt*(1+y/m)-A
+  PLvec[N+1,2]<-Palt
+  #Simulate yield again to determine value of coupon bond when sold at last liability payment time
+  y<-runif(1, min=y-inc, max=y+inc)
+  #Output
+  yvec[N+1]<-y
+  n2<-n2-1
+  P2<-PBond(c2,y,m,n2)
+  Port_fin<-100*x[1]+x[2]*(P2+100*c2/m)-A
+  PLvec[N+1,1]<-Port_fin
+  Value[j,1]<-Port_fin
+  Value[j,2]<-Palt
+  Yfinal[j]<-y
+}
+
+#Output from last simulation
+Mout<-cbind(yvec,xvec,PLvec)
+sink("test.txt")
+print(Mout)
+sink()
+
+#Update with final portfolio values
+V1<-Value[,1]
+summary(V1)
+V2<-Value[,2]
+summary(V2)
+
+#Histograms of hedging portfolio values at the final payment date
+par(mfcol=c(1,2))
+hist(V1,main=paste("Immunization Strategy"),xlab="Net $ Value at Maturity")
+hist(V2,main=paste("Naive Strategy"),xlab="Net $ Value at Maturity")
