@@ -1,0 +1,274 @@
+rm(list=ls())  
+
+###################################################################################
+
+#Flat spot rate curve at 5%, continuously-compounded
+r <- rep(0.05,10)
+t <- seq(.5,5,.5)
+DF <- exp(-r*t)
+m <- 2
+T <- 4
+
+###################################################################################
+#Valuation functions
+# Price of an annuity, continous compounding
+P.ann<-function(DF,T,m){
+  A<-0
+  F <- 1000000
+  n<-T*m
+  for(i in 1:n){
+    A<-A+F*DF[i]
+  }
+  A
+}
+
+#Price of a fixed-rate coupon bond, continous compounding
+P.bond<-function(DF,c,T,m){
+  A<-0
+  F <- 100
+  n<-T*m
+  for(i in 1:n){
+    A<-A+F*(c/m)*DF[i]
+  }
+  A<-A+F*DF[i]
+}
+################################################################################
+#Price of the annuity
+(P.ann(DF,T,m))
+
+#Key rate function
+KR <- c(0.25,1,2,3,5,7,10,15,20,25,30)
+d <- -.0001
+
+KeyRate <- function(d,t,KR) {
+  A=0
+  nt <- length(t)
+  nk <- length(KR)
+  kr <- matrix(NA,nrow=nt,ncol=nk)
+  for(i in 1:length(t)) {
+      if(t[i]<=KR[1]) {
+        A=d
+      }
+      if(t[i]>KR[1]&&t[i]<=KR[2]) {
+        A=d*((KR[2]-t[i])/(KR[2]-KR[1]))
+      }
+      if(t[i]>=KR[2]){
+        A=0
+      }
+    kr[i,1] <- A
+    A=0
+  }
+  for(i in 1:length(t)) {
+      if(t[i]<KR[nk-1]) {
+        A=0
+      }
+      if(t[i]>KR[nk-1]&&t[i]<=KR[nk]) {
+        A=d*((t[i]-KR[nk-1])/(KR[nk]-KR[nk-1]))
+      }
+      if(t[i]>KR[nk]) {
+        A=0
+      }
+    kr[i,ncol(kr)] <- A
+    A=0
+  }
+  for(i in 2:length(KR[-nk])) {
+    for(k in 1:length(t)) {
+      if(t[k]<KR[i-1]) {
+        A=0
+      }
+      if(t[k]>=KR[i-1]&&t[k]<=KR[i]) {
+        A=d*((t[k]-KR[i-1])/(KR[i]-KR[i-1]))
+      }
+      if(t[k]>KR[i]&&t[k]<=KR[i+1]) {
+        A=d*((KR[i+1]-t[k])/(KR[i+1]-KR[i]))
+      }
+      if(t[k]>KR[i+1]) {
+        A=0
+      }
+    kr[k,i] <- A
+    A=0
+    }
+  }
+  kr <- kr+r
+  kr <- exp(-kr*t)
+}
+
+#KR01 for annuity
+KR01 <- matrix(NA,nrow=1,ncol=length(KR),dimnames=list("KR01",KR))
+kr <- KeyRate(d,t,KR)
+for(i in 1:ncol(kr)) {
+  KR01[,i] <- (P.ann(kr[,i],T,m)-P.ann(DF,T,m))
+}
+KR01
+b <- KR01
+
+#Barplot of annuity KR01s
+barplot(height=KR01,names.arg=names(KR01),ylab="KR01",main="KR01 profile 4yr annuity",col="slategrey")
+
+###################################################################################
+
+#Key rates durations for hedging instruments
+#5y par rate coupon bond
+c <- 0.0506303
+m <- 2
+T <- 5
+t <- seq(.5,5,.5)
+(P.bond(DF,c,T,m))
+kr <- KeyRate(d,t,KR)
+for(i in 1:ncol(kr)) {
+  KR01[,i] <- (P.bond(kr[,i],c,T,m)-P.bond(DF,c,T,m))
+}
+KR01
+KR01_1 <- KR01
+
+
+#6m ZCB
+c <- 0
+T <- 0.5
+t <- 0.5
+r <- 0.05
+kr <- KeyRate(d,t,KR)
+for(i in 1:ncol(kr)) {
+  KR01[,i] <- (P.bond(kr[,i],c,T,m)-P.bond(DF,c,T,m))
+}
+KR01
+KR01_2 <- KR01
+
+#1y ZCB
+T <- 1
+t <- c(0.5,1)
+r <- c(0.05,0.05)
+kr <- KeyRate(d,t,KR)
+for(i in 1:ncol(kr)) {
+  KR01[,i] <- (P.bond(kr[,i],c,T,m)-P.bond(DF,c,T,m))
+}
+KR01
+KR01_3 <- KR01
+
+#3y ZCB
+T <- 3
+t <- seq(0.5,3,0.5)
+r <- rep(0.05,6)
+kr <- KeyRate(d,t,KR)
+for(i in 1:ncol(kr)) {
+  KR01[,i] <- (P.bond(kr[,i],c,T,m)-P.bond(DF,c,T,m))
+}
+KR01
+KR01_4 <- KR01
+
+#2y 2% bond
+c <- 0.02
+T <- 2
+t <- seq(0.5,2,0.5)
+r <- rep(0.05,4)
+kr <- KeyRate(d,t,KR)
+for(i in 1:ncol(kr)) {
+  KR01[,i] <- (P.bond(kr[,i],c,T,m)-P.bond(DF,c,T,m))
+}
+KR01
+KR01_5 <- KR01
+
+#Hedge for immunization to key rate shifts
+#Solve for linear equations
+b1 <- matrix(0,nrow=5,ncol=5)
+b1[,1] <- b[1:5]
+KRa <- t(rbind(KR01_1,KR01_2,KR01_3,KR01_4,KR01_5)[,1:5])
+solve(KRa,b1)*100
+
+###################################################################################
+yields <- read.table("yields.txt",header=T)
+factors <- read.table("factors.txt",header=T)
+
+#Interpolation of beta factors
+mat <- matrix(data=NA,nrow=40,ncol=4)
+mat[,1] <- seq(.25,10,.25)
+t0 <- rep(0,4)
+factors <- rbind(t0,factors)
+n <- 0
+p <- 0
+for(j in 2:ncol(factors)) {
+  for(i in 2:nrow(factors)) {
+    n <- (factors[i,1]-factors[i-1,1])/.25
+    p <- p+n
+    if(factors[i,1]-.25==factors[i-1,1]) {
+      mat[i-1,j] <- factors[i,j]
+    }
+    if(factors[i,1]-.25!=factors[i-1,1]) {
+      mat[p,j] <- factors[i,j]
+      for(k in (p-n+1):(p-1)) {
+        mat[k,j] <- factors[i-1,j]+(factors[i,j]-factors[i-1,j])*((mat[k,1]-factors[i-1,1])/(factors[i,1]-factors[i-1,1]))
+      }
+    }
+  }
+  n <- 0
+  p <- 0
+}
+
+#Factor duration function using continously-compounded yields
+D <- function(r,t,c,m,P,b) {
+  F <- 100
+  A <- 0
+  for( i in 1:length(t) ) {
+    A <- A+t[i]*c/m*F*exp(-r[i]/100*t[i])*b[i]
+  }
+  B=t[length(t)]*F*exp(-r[length(r)]/100*t[length(t)])*b[i]
+  (A+B)/P
+}
+
+################################################################################
+#Factor durations for 5.5y ZCB
+(mat[22,1]*mat[22,2:4])
+
+################################################################################
+#Factor durations for Coupon Bond 2
+c <- 0.05
+m <- 4
+T <- 5
+t <- yields[,1][1:20]
+r <- yields[,2][1:20]/100
+DF <- yields[,3][1:20]
+P <- P.bond(DF,c,T,m)
+B1 <- mat[,2][1:20]
+B2 <- mat[,3][1:20]
+B3 <- mat[,4][1:20]
+(D(r,t,c,m,P,B1))
+(D(r,t,c,m,P,B2))
+(D(r,t,c,m,P,B3))
+
+################################################################################
+#Factor durations for Inverse floater
+#Replicating constituents
+#5 year ZCB
+c <- 0
+m <- 2
+t <- t[seq(2,length(t),2)]
+r <- r[seq(2,length(r),2)]
+DF <- DF[seq(2,length(DF),2)]
+P <- P.bond(DF,c,T,m)
+Pzcb <- P
+FDzcb <- mat[20,1]*mat[20,2:4]
+FDzcb
+
+#5 year %10 coupon bond
+c <- 0.1
+m <- 2
+P <- P.bond(DF,c,T,m)
+B1 <- B1[seq(2,20,2)]
+B2 <- B2[seq(2,20,2)]
+B3 <- B3[seq(2,20,2)]
+P <- P.bond(DF,c,T,m)
+Pc <- P
+FDc <- rep(0,3)
+FDc[1] <- D(r,t,c,m,P,B1)
+FDc[2] <- D(r,t,c,m,P,B2)
+FDc[3] <- D(r,t,c,m,P,B3)
+FDc
+
+#5 year FRN
+Pfrn <- 100
+FDfrn <- mat[2,1]*mat[2,2:4]
+FDfrn
+
+#Inverse floater factor durations
+FDif <- (Pzcb/(Pzcb+Pc-Pfrn))*FDzcb+(Pc/(Pzcb+Pc-Pfrn))*FDc-(Pfrn/(Pzcb+Pc-Pfrn))*FDfrn
+FDif
