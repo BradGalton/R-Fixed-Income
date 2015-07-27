@@ -1,0 +1,176 @@
+########################################################################################
+#Nelson-Siegel optimization
+########################################################################################
+rm(list=ls())
+library(Matrix)
+
+date.init<-as.Date("2013-12-31")
+data <- read.table("bond_quotes_hw.txt",header=TRUE)
+data[,1] <- as.character(data[,1])
+v <- paste(substring(data[,1],1,4),"-",substring(data[,1],5,6),"-",substring(data[,1],7,8),sep = "")
+head(v)
+data[,1] <- as.Date(v)
+n.bonds <- length(data[,1])
+data.coup <- matrix(NA,nrow =n.bonds,ncol=20)
+maturity<- v
+data.last <- rep(NA,n.bonds)
+days.year <- 365
+accrued <- rep(0,n.bonds)
+
+#Last coupon payment dates
+for( i in 1:n.bonds ) {
+  max.per <- 20
+  test <- seq(from=data[i,1],by="-6 months",length.out=max.per)
+  year <- as.numeric(substring(test,1,4))
+  temp <- year[1]
+  j <- 1
+  while(temp>2013){
+    data.coup[i,j] <- as.character(test[j])
+    j <- j+1
+    temp <- year[j]
+  }
+  data.last[i] <- as.character(test[j])
+} 
+
+#Accrued interest,dirty prices, and current coupon payment dates
+n1 <- nnzero(data.coup,na.counted=F)
+n <- length(maturity)
+price <- 0.5*(data[,3]+data[,4])
+p.mkt <- rep(0,n.bonds)
+j1 <- 0
+
+for( i in 1:n.bonds ) {
+  n2 <- nnzero(data.coup[i,],na.counted=F)
+  j1=j1+n2
+  days <- as.numeric(date.init-as.Date(data.last[i]))
+  days.tot <- as.numeric(as.Date(data.coup[i,n2])-as.Date(data.last[i]))
+  accrued[i] <- (data[i,2]/2)*days/days.tot
+  p.mkt[i] <- accrued[i]+price[i]
+} 
+
+################################################################################################################################
+#List and array
+dat <- list(data=data,data.coup=data.coup,data.last=as.Date(data.last),days.year=days.year,p.mkt=p.mkt,date.init=date.init,n=n)
+v <- c(0.05,0.05,0.05,0.05)
+w <- c("Theta0","Theta1","Theta2","Lambda")
+z <- array(v,length(v),dimnames=list(w))
+
+#Nelson-Siegel model
+NelsonSiegel <- function(Theta0,Theta1,Theta2,Lambda,days,days.year) {
+  r <- Theta0+(Theta1+Theta2)*(1-exp(-days/(days.year*Lambda)))/(days/(days.year*Lambda))-Theta2*exp(-days/(days.year*Lambda))  
+}
+  
+#Objective function
+NelsonSiegelObjective <- function(z,dat) {
+  Theta0 <- z[1]
+  Theta1 <- z[2]
+  Theta2 <- z[3]
+  Lambda <- z[4]
+  data <- dat[[1]]
+  data.coup <- dat[[2]]
+  data.last <- dat[[3]]
+  days.year <- dat[[4]]
+  p.mkt <- dat[[5]]
+  date.init <- dat[[6]]
+  n <- dat[[7]]
+  p.mod <- rep(0,n)
+  S <- 0
+  
+  for(i in 1:n ) {
+    A <-0
+    F <- 100
+    j <- 1
+    days <- as.numeric(as.Date(data.coup[i,j])-date.init)
+    r <-NelsonSiegel(Theta0,Theta1,Theta2,Lambda,days,days.year)
+    A <- A+(data[i,2]/2+F)*exp(-r*days/days.year)
+    j <- j+1
+    while(is.na(data.coup[i,j])==FALSE) {
+      days <- as.numeric(as.Date(data.coup[i,j])-date.init)
+      r <- NelsonSiegel(Theta0,Theta1,Theta2,Lambda,days,days.year)
+      A <- A+(data[i,2]/2)*exp(-r*days/days.year)
+      j <- j+1
+    }
+    days <- as.numeric(date.init-as.Date(data.last[i]))
+    days.tot <- as.numeric(as.Date(data.coup[i,j-1])-as.Date(data.last[i]))
+    p.mod[i] <- A
+    S <- S+(p.mkt[i]-p.mod[i])^2
+  }
+  f <- S
+}
+
+#Initial optimization
+output <- optim(par=c(0.05,0.05,0.05,0.05),fn=NelsonSiegelObjective,dat=dat,gr=NULL,method=c("Nelder-Mead"),hessian=FALSE)
+temp <- output$par
+
+#Calibration
+v <- c(0.07,0.04,-0.01,3)
+w <- c("Theta0","Theta1","Theta2","Lambda")
+z <- array(v,length(v),dimnames=list(w))
+output <- optim(par=z,fn=NelsonSiegelObjective,dat=dat,gr=NULL,method=c("Nelder-Mead"),hessian=FALSE)
+temp <- output$par
+z <- temp
+
+##########################################################################
+#Plots
+#Scatter plot
+#Repeat for loop of Nelson-Siegel Ob funtion to produce p.modopt vector 
+Theta0 <- z[1]
+Theta1 <- z[2]
+Theta2 <- z[3]
+Lambda <- z[4]
+data <- dat[[1]]
+data.coup <- dat[[2]]
+data.last <- dat[[3]]
+days.year <- dat[[4]]
+p.mkt <- dat[[5]]
+date.init <- dat[[6]]
+n <- dat[[7]]
+p.mod <- rep(0,n)
+S <- 0
+
+for(i in 1:n ) {
+  A <-0
+  F <- 100
+  j <- 1
+  days <- as.numeric(as.Date(data.coup[i,j])-date.init)
+  r <-NelsonSiegel(Theta0,Theta1,Theta2,Lambda,days,days.year)
+  A <- A+(data[i,2]/2+F)*exp(-r*days/days.year)
+  j <- j+1
+  while(is.na(data.coup[i,j])==FALSE) {
+    days <- as.numeric(as.Date(data.coup[i,j])-date.init)
+    r <- NelsonSiegel(Theta0,Theta1,Theta2,Lambda,days,days.year)
+    A <- A+(data[i,2]/2)*exp(-r*days/days.year)
+    j <- j+1
+  }
+  days <- as.numeric(date.init-as.Date(data.last[i]))
+  days.tot <- as.numeric(as.Date(data.coup[i,j-1])-as.Date(data.last[i]))
+  p.mod[i] <- A
+}
+
+p.modopt <- p.mod
+matplot(cbind(p.mkt,p.modopt),type="p",pch=c(8,5),main="Market prices versus calibrated Nelson-Siegel prices",xlab="Maturity Date",ylab="Price ($)",xaxt='n')
+axis(1,at=1:161,labels=as.character(format(data[,1],"%b-%y")),cex.axis=0.6)
+
+########################################################################################
+#Discount factor plot
+CF <- as.Date(sort(na.omit(as.vector(data.coup))))
+CFdays <- rep(0,length(CF))
+r <- rep(0,length(CF))
+for( i in 1:length(CF) ) {
+  CFdays[i] <- as.numeric(CF[i]-date.init)
+  r[i] <-NelsonSiegel(Theta0,Theta1,Theta2,Lambda,CFdays[i],days.year)
+}
+
+DF <- exp(-r*CFdays/days.year)
+plot(DF,main="Nelson-Siegel Discount Factors",xlab="Cash Flow Date",ylab="Discount Factor",xaxt='n')
+axis(1,1:665,labels=as.character(format(CF,"%b-%y")),cex.axis=0.6)
+
+######################################################################################################
+#Spot rate plot
+NSspots <- rep(0,length(DF))
+for( i in 1:length(DF) ) {
+  NSspots[i] <- log(DF[i])/-(CFdays[i]/days.year)*100
+}
+
+plot(NSspots, main="Nelson-Siegel Spot Rates (Continuous Compounding)", xlab="Time (t0,tk)",ylab="Spot Rate r(t)",xaxt='n')
+axis(1,1:665,labels=as.character(format(CF,"%b-%y")),cex.axis=0.6)
