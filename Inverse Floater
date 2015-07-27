@@ -1,0 +1,269 @@
+rm(list=ls())  
+
+###################################################################################
+###################################################################################
+#Price function using continously-compounded discount factors
+P.bond<-function(DF,c,T,m){
+  A<-0
+  F<-100
+  n<-T*m
+  for(i in 1:n){
+    A<-A+F*(c/m)*DF[i]
+  }
+  A<-A+F*DF[i]
+}
+
+#Duration function using continously-compounded yields
+D_ccy <- function(y,k,c,m,P) {
+  F <- 100
+  A <- 0
+  for( i in 1:length(k) ) {
+    A <- A+k[i]*c/m*F*exp(-y*k[i])
+  }
+  B=k[length(k)]*F*exp(-y*k[length(k)])
+  (A+B)/P
+}
+
+#PV function using continuously-compounded yields for yield opimization
+PV <- function(y,k,c,m,P) {
+  F=100
+  C=F*(c/m)
+  A=0
+  for( i in 1:length(k) ) {
+    A=A+C*exp(-y*k[i])
+  }
+  A=A+F*exp(-y*k[length(k)])
+  -P+A
+}
+
+# Price of Inverse Floater replicating constituents
+# Price of FRN
+(100)
+
+# Price of 5%, annual coupon bond
+m <- 1
+T <- 10
+c <- 0.05
+k <- seq(1,10,1)
+Spots <- rep(0.05,10)
+DF <- exp(-Spots*k)
+P <- P.bond(DF,c,T,m)
+
+#Duration of 5% annual coupon bond
+yield <- uniroot(function(y) PV(y,k,c,m,P),c(0,1),tol=1e-7)
+y <- yield$root
+(D_ccy(y,k,c,m,P))
+
+# Duration of Inverse Floater replicating constituents
+# Duration of FRN
+(1-0)
+
+###################################################################################
+x <- read.table("YieldCurveFeb1994.txt",header=TRUE)
+
+#Price of Inverse Floater replicating components
+#Price of the 20% coupon bond
+DF <- x[,3]
+c <- 0.2
+T <- 6
+m <- 4
+(P.bond(DF,c,T,m))
+
+#Price of the ZCB
+c <- 0
+(P.bond(DF,c,T,m))
+
+
+#Price of Floating Rate Note replicating components
+#Price of 0.45% coupon bond
+DF <- DF[seq(2,length(DF),2)]
+c <- 0.0045
+T <- 4
+m <- 2
+(P.bond(DF,c,T,m))
+
+#Price of the ZCB
+c <- 0
+(P.bond(DF,c,T,m))
+
+
+#Price of the 5 year Zero Coupon Bond
+DF <- x[,3]
+c <- 0
+T <- 5
+m <- 4
+(P.bond(DF,c,T,m))
+
+
+###################################################################################
+#Duration of the Inverse Floater replicating components
+#Duration of the 20% coupon bond
+k <- x[,1]
+c <- 0.2
+m <- 4
+P <- 174.7225
+yield <- uniroot(function(y) PV(y,k,c,m,P),c(0,1),tol=1e-7)
+y <- yield$root
+(D_ccy(y,k,c,m,P))
+
+#Duration of the ZCB
+c <- 0
+P <- 71.76
+yield <- uniroot(function(y) PV(y,k,c,m,P),c(0,1),tol=1e-7)
+y <- yield$root
+(D_ccy(y,k,c,m,P))
+
+
+#Duration of the Floating Rate Note replicating components
+#Duration of the 0.45% coupon bond
+k <- x[(1:16),1]
+c <- 0.0045
+m <- 2
+P <- 83.07301
+yield <- uniroot(function(y) PV(y,k,c,m,P),c(0,1),tol=1e-7)
+y <- yield$root
+(D_ccy(y,k,c,m,P))
+
+#Duration of the ZCB
+c <- 0
+P <- 81.45
+yield <- uniroot(function(y) PV(y,k,c,m,P),c(0,1),tol=1e-7)
+y <- yield$root
+(D_ccy(y,k,c,m,P))
+
+
+#Duration of the 5 Year Zero Coupon Bond
+k <- x[(1:20),1]
+P <- 76.41
+yield <- uniroot(function(y) PV(y,k,c,m,P),c(0,1),tol=1e-7)
+y <- yield$root
+(D_ccy(y,k,c,m,P))
+
+###################################################################################
+#Convexity function using continously-compounded yields
+Convexity <- function(c,y,m,k) {
+  F <- 100
+  A <- 0
+  for( i in 1:length(k) ) {
+  A <- A+k[i]^2*c/m*F*exp(-y*k[i])
+  }
+  B=k[length(k)]^2*F*exp(-y*k[length(k)])
+  (A+B)/P
+}
+
+#Convexities of the Inverse Floater replicating components
+#Convexity of the FRN
+(0.25-0)^2
+
+#Convexity of the 20% coupon bond
+k <- x[,1]
+c <- 0.2
+m <- 4
+P <- 174.7225
+yield <- uniroot(function(y) PV(y,k,c,m,P),c(0,1),tol=1e-7)
+y <- yield$root
+(Convexity(c,y,m,k))
+
+#Convexity of the ZCB
+c <- 0
+P <- 71.76
+yield <- uniroot(function(y) PV(y,k,c,m,P),c(0,1),tol=1e-7)
+y <- yield$root
+(Convexity(c,y,m,k))
+
+
+#Convexities of the Floating Rate Note replicating components
+#Convexity of the FRN
+(0.50-0)^2
+
+#Convexity of the 0.45% coupon bond
+k <- x[(1:16),1]
+c <- 0.0045
+m <- 2
+P <- 83.07301
+yield <- uniroot(function(y) PV(y,k,c,m,P),c(0,1),tol=1e-7)
+y <- yield$root
+(Convexity(c,y,m,k))
+
+#Convexity of the ZCB
+c <- 0
+P <- 81.45
+yield <- uniroot(function(y) PV(y,k,c,m,P),c(0,1),tol=1e-7)
+y <- yield$root
+(Convexity(c,y,m,k))
+
+
+#Convexity of the 5 Year Zero Coupon Bond
+k <- x[(1:20),1]
+P <- 76.41
+yield <- uniroot(function(y) PV(y,k,c,m,P),c(0,1),tol=1e-7)
+y <- yield$root
+(Convexity(c,y,m,k))
+
+###################################################################################
+#Price of 4% coupon bond
+DF <- x[,3]
+DF <- DF[seq(2,length(DF),2)]
+c <- 0.04
+T <- 6
+m <- 2
+(P.bond(DF,c,T,m))
+
+#Duration of 4% coupon bond
+k <- x[,1]
+P <- 92.2124
+yield <- uniroot(function(y) PV(y,k,c,m,P),c(0,1),tol=1e-7)
+y <- yield$root
+(D_ccy(y,k,c,m,P))
+
+###################################################################################
+#Convexity of Hedged Portfolio
+#Convexity of Hedging Bond
+(Convexity(c,y,m,k))
+
+###################################################################################
+#25 bp increase in spot rates
+#Unhedged portfolio prices
+Spot <- x[,2]+0.25
+DF <- exp(-Spot/100*k)
+
+#Price of Inverse Floater replicating components
+#Price of the 20% coupon bond
+c <- 0.2
+T <- 6
+m <- 4
+(P.bond(DF,c,T,m))
+
+#Price of the ZCB
+c <- 0
+(P.bond(DF,c,T,m))
+
+
+#Price of Floating Rate Note replicating components
+#Price of 0.45% coupon bond
+DF <- DF[seq(2,length(DF),2)]
+c <- 0.0045
+T <- 4
+m <- 2
+(P.bond(DF,c,T,m))
+
+#Price of the ZCB
+c <- 0
+(P.bond(DF,c,T,m))
+
+
+#Price of the 5 year Zero Coupon Bond
+Spot <- x[,2]+0.25
+DF <- exp(-Spot/100*k)
+c <- 0
+T <- 5
+m <- 4
+(P.bond(DF,c,T,m))      
+
+#Hedged position
+#Price of 4% coupon bond
+DF <- DF[seq(2,length(DF),2)]
+c <- 0.04
+T <- 6
+m <- 2
+(P.bond(DF,c,T,m))
