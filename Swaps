@@ -1,0 +1,98 @@
+rm(list=ls())  
+
+###################################################################################
+###################################################################################
+LIBOR<- read.table("LIBOR.txt",header=T)
+
+#Computing the discount curve from realized LIBOR rates
+df <- matrix(NA,nrow=12,ncol=10)
+for(i in 1:nrow(LIBOR)) {
+  for(j in 2:ncol(LIBOR)) {
+    df[i,j-1] <- 1/((LIBOR[i,j]/100*LIBOR[i,1]/12)+1)
+  }
+}
+df
+
+###################################################################################
+#Calculating the 1 year par swap rate
+d <- 1/12
+c <- (1-df[12,1])/(sum(df[,1]*d))
+c
+
+###################################################################################
+#Valuing the NPV to the fixed rate receiver on a realized, monthly basis
+#Bootstrapping the implied forward LIBOR curve
+lf <- matrix(0,nrow=12,ncol=10)
+lf[1,] <- as.numeric(LIBOR[1,2:11])/100
+for(i in 2:ncol(LIBOR)) {
+  for(k in 1:length(LIBOR[,1][-12])) {
+    lf[k+1,i-1] <- as.numeric((((1+(d*LIBOR[k+1,1])*(LIBOR[k+1,i]/100))/(1+(d*LIBOR[k,1])*LIBOR[k,i]/100))-1)*1/d)
+  }
+}
+lf
+
+#Valuing the NPV on a rolling, monthly basis using implied forward LIBOR rates
+N <- 100000000
+NPV <- rep(0,10)
+F=0
+n=0
+for(i in 1:ncol(lf)) {
+  for(k in 1:(12-n)) {
+    PV <- df[k,i]*d*(c-lf[k,i])
+    F=F+PV
+  }
+  NPV[i] <- F*N
+  F=0
+  n=n+1
+}
+NPV
+
+###################################################################################
+#Bootstrapping OIS-implied discount factors
+#Solving for system of linear equations
+OIS <- c(0.013,0.0184,0.022,0.0274,0.0298,0.0332,0.0363,0.039)
+delta <- 0.25
+A <- matrix(0,nrow=8,ncol=8)
+n=0
+for(i in 1:length(OIS)) {
+  n=n+1
+  A[i,1:(n-1)] <- rep(100*delta*OIS[i])
+  A[i,n] <- 100*(delta*OIS[i]+1)
+}
+N <- rep(100,8)
+DF <- solve(A,N)
+DF
+
+###################################################################################
+#Bootstrapping forward LIBOR rates
+#Solving for system of linear equations
+L <- c(0.015,0.0208,0.0247,0.0296,0.0321,0.0354,0.0385,0.0412)
+B <- matrix(0,nrow=8,ncol=8)
+n=0
+for(i in 1:length(L)) {
+  n=n+1
+  B[i,1:n] <- rep(100*d*L[i])
+}
+
+n=0
+D <- matrix(0,nrow=8,ncol=8)
+for(i in 1:length(DF)) {
+  n=n+1
+  D[n:length(DF),n] <- rep(100*d*DF[i])
+}
+
+b <- B%*%DF
+LF <- solve(D,b)
+LF
+
+###################################################################################
+#Valuing the NPV of a 24 month 4.00% swap to the fixed rate receiver
+
+N <- 100000000
+c <- 0.04
+F=0
+for(i in 1:length(DF)) {
+  NPV <- DF[i]*delta*(c-LF[i])
+  F=F+NPV
+}
+N*F
